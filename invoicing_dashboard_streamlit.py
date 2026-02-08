@@ -499,7 +499,6 @@ def main():
     st.markdown("""
     <div style='text-align: center; color: #666; padding: 1rem;'>
         <p>Invoicing Manager KPI Dashboard | Built with Streamlit</p>
-        <p style='font-size: 0.8rem;'>Update your data in the <code>initialize_data()</code> function to connect to your real data source</p>
     </div>
     """, unsafe_allow_html=True)
 
