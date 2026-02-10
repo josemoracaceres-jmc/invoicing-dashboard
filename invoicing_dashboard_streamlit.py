@@ -1,13 +1,11 @@
 """
-Invoicing Manager KPI Dashboard - Streamlit Application
-A comprehensive dashboard for tracking invoicing KPIs in a refit shipyard
+Invoicing Manager KPI Dashboard - Streamlit Application with Excel Upload
+Upload your monthly invoicing data Excel file to view the dashboard
 """
 
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
-from datetime import datetime, timedelta
 
 # =============================================================================
 # PAGE CONFIGURATION
@@ -27,43 +25,59 @@ st.set_page_config(
 st.markdown("""
 <style>
     .main-header {
-        background: linear-gradient(135deg, #2F5496 0%, #4472C4 100%);
-        color: white;
-        padding: 2rem;
-        border-radius: 10px;
-        margin-bottom: 2rem;
-        text-align: center;
+        background: #F5F7FA;
+        color: #2F5496;
+        padding: 0.75rem;
+        border-radius: 5px;
+        margin-bottom: 1rem;
+        text-align: left;
+        border-left: 4px solid #2F5496;
     }
     
-    .kpi-card {
+    .kpi-category {
         background: white;
         border-radius: 8px;
-        padding: 1.5rem;
+        padding: 20px;
+        margin: 15px 0;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        margin: 1rem 0;
     }
-    
-    .metric-card {
-        background: #f8f9fa;
-        border-left: 4px solid #2F5496;
-        padding: 1rem;
-        border-radius: 4px;
-        margin: 0.5rem 0;
+
+    .kpi-category h3 {
+        color: #2F5496;
+        border-bottom: 2px solid #2F5496;
+        padding-bottom: 10px;
+        margin-bottom: 15px;
     }
-    
-    .status-green {
-        color: #00B050;
-        font-size: 24px;
+
+    .kpi-table {
+        width: 100%;
+        border-collapse: collapse;
     }
-    
-    .status-amber {
-        color: #FFC000;
-        font-size: 24px;
+
+    .kpi-table th {
+        background: #D9E1F2;
+        padding: 10px;
+        text-align: left;
+        font-weight: bold;
     }
-    
-    .status-red {
-        color: #C00000;
-        font-size: 24px;
+
+    .kpi-table td {
+        padding: 10px;
+        border-bottom: 1px solid #E0E0E0;
+    }
+
+    .kpi-table tr:hover {
+        background: #F8F9FA;
+    }
+
+    .success { color: #00B050; font-size: 20px; }
+    .warning { color: #FFC000; font-size: 20px; }
+    .error { color: #C00000; font-size: 20px; }
+
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
     }
     
     .category-header {
@@ -77,53 +91,54 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# DATA INITIALIZATION
+# DATA VALIDATION AND LOADING
 # =============================================================================
 
-@st.cache_data
-def initialize_data():
-    """Initialize sample monthly data for the dashboard"""
-    months = pd.date_range(start='2024-01-01', periods=12, freq='MS')
+def validate_excel_data(df):
+    """Validate that Excel has all required columns"""
+    required_columns = [
+        'Month', 'Total_Invoices', 'OnTime_Invoices', 'Avg_Billing_Timeliness',
+        'Avg_Invoice_Cycle_Time', 'Planned_Milestones', 'Invoiced_Milestones',
+        'Corrected_Invoices', 'Reissued_Invoices', 'Disputed_Invoices',
+        'Avg_Dispute_Resolution_Days', 'Recognized_Revenue', 'Invoiced_Amount',
+        'CO_Approved', 'CO_Invoiced', 'Advance_Received', 'Advance_Used',
+        'WIP', 'Avg_Daily_Billed_Revenue', 'Old_WIP', 'Monthly_Revenue',
+        'Submitted_Packages', 'Returned_Packages', 'Avg_PM_Approval_Days',
+        'Total_Cost_Reports', 'Late_Cost_Reports'
+    ]
     
-    data = {
-        'Month': months,
-        # Timeliness metrics
-        'Total_Invoices': [45, 52, 48, 51, 49, 53, 50, 47, 52, 54, 51, 49],
-        'OnTime_Invoices': [42, 49, 45, 48, 47, 51, 48, 45, 50, 52, 49, 47],
-        'Avg_Billing_Timeliness': [4.2, 5.8, 4.5, 5.2, 4.0, 4.8, 3.9, 4.1, 4.3, 4.0, 4.2, 3.8],
-        'Avg_Invoice_Cycle_Time': [6.5, 7.2, 6.8, 7.0, 6.3, 6.9, 6.1, 6.4, 6.6, 6.2, 6.5, 6.0],
-        'Planned_Milestones': [50, 55, 52, 54, 51, 56, 53, 50, 55, 57, 54, 52],
-        'Invoiced_Milestones': [50, 54, 52, 54, 51, 56, 53, 50, 55, 57, 54, 52],
-        
-        # Quality metrics
-        'Corrected_Invoices': [1, 2, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1],
-        'Reissued_Invoices': [1, 2, 1, 2, 1, 1, 0, 1, 1, 1, 1, 0],
-        'Disputed_Invoices': [2, 3, 2, 2, 1, 2, 2, 1, 2, 2, 1, 2],
-        'Avg_Dispute_Resolution_Days': [9.5, 11.2, 9.8, 10.1, 8.5, 9.3, 8.8, 8.2, 9.0, 8.7, 8.9, 8.5],
-        
-        # Coverage metrics
-        'Recognized_Revenue': [2500000, 2700000, 2600000, 2650000, 2550000, 2750000, 2680000, 2620000, 2700000, 2800000, 2720000, 2650000],
-        'Invoiced_Amount': [2475000, 2673000, 2574000, 2623500, 2524500, 2722500, 2653600, 2593800, 2673000, 2772000, 2693600, 2623500],
-        'CO_Approved': [150000, 180000, 160000, 170000, 155000, 185000, 175000, 165000, 180000, 190000, 182000, 170000],
-        'CO_Invoiced': [145000, 171000, 155200, 163500, 150250, 179750, 170125, 159825, 174600, 184550, 176540, 164500],
-        'Advance_Received': [500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000],
-        'Advance_Used': [450000, 465000, 472000, 485000, 492000, 498000, 500000, 500000, 500000, 500000, 500000, 500000],
-        
-        # WIP metrics
-        'WIP': [2100000, 2250000, 2180000, 2200000, 2150000, 2280000, 2220000, 2170000, 2240000, 2300000, 2260000, 2190000],
-        'Avg_Daily_Billed_Revenue': [83333, 90000, 86667, 88333, 85000, 91667, 89333, 87333, 90000, 93333, 90667, 88333],
-        'Old_WIP': [168000, 202500, 174400, 176000, 172000, 205200, 177600, 173600, 201600, 207000, 203400, 175200],
-        'Monthly_Revenue': [2500000, 2700000, 2600000, 2650000, 2550000, 2750000, 2680000, 2620000, 2700000, 2800000, 2720000, 2650000],
-        
-        # Collaboration metrics
-        'Submitted_Packages': [48, 54, 50, 52, 50, 55, 52, 49, 54, 56, 53, 51],
-        'Returned_Packages': [2, 3, 2, 2, 1, 2, 2, 1, 2, 2, 1, 2],
-        'Avg_PM_Approval_Days': [2.8, 3.2, 2.9, 3.0, 2.5, 2.9, 2.7, 2.6, 2.8, 2.7, 2.6, 2.5],
-        'Total_Cost_Reports': [50, 55, 52, 54, 51, 56, 53, 50, 55, 57, 54, 52],
-        'Late_Cost_Reports': [2, 3, 2, 3, 2, 2, 2, 1, 2, 2, 1, 2],
-    }
+    missing_columns = [col for col in required_columns if col not in df.columns]
     
-    return pd.DataFrame(data)
+    if missing_columns:
+        return False, missing_columns
+    return True, []
+
+def load_data_from_excel(uploaded_file):
+    """Load and process data from uploaded Excel file"""
+    try:
+        # Read the Excel file
+        df = pd.read_excel(uploaded_file, sheet_name=0)
+        
+        # Validate the data
+        is_valid, missing_cols = validate_excel_data(df)
+        
+        if not is_valid:
+            st.error(f"❌ Missing required columns: {', '.join(missing_cols)}")
+            st.info("Please upload a file with all required columns.")
+            return None
+        
+        # Convert Month column to datetime
+        df['Month'] = pd.to_datetime(df['Month'])
+        
+        # Sort by month
+        df = df.sort_values('Month').reset_index(drop=True)
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"❌ Error reading file: {str(e)}")
+        st.info("Please make sure your file is a valid Excel file with the correct format.")
+        return None
 
 # =============================================================================
 # KPI CALCULATION FUNCTIONS
@@ -169,18 +184,18 @@ def get_status(value, target, comparison='<='):
     """Determine KPI status (Green/Amber/Red)"""
     if comparison == '<=':
         if value <= target:
-            return '🟢', 'green'
+            return '🟢', 'success'
         elif value <= target * 1.1:
-            return '🟠', 'amber'
+            return '🟠', 'warning'
         else:
-            return '🔴', 'red'
+            return '🔴', 'error'
     else:  # '>='
         if value >= target:
-            return '🟢', 'green'
+            return '🟢', 'success'
         elif value >= target * 0.9:
-            return '🟠', 'amber'
+            return '🟠', 'warning'
         else:
-            return '🔴', 'red'
+            return '🔴', 'error'
 
 # =============================================================================
 # KPI DEFINITIONS
@@ -218,11 +233,13 @@ kpi_definitions = {
 }
 
 # =============================================================================
-# CHART FUNCTIONS
+# CHART GENERATION FUNCTIONS
 # =============================================================================
 
 def create_trend_chart(data, metric_key, title, target=None):
     """Create a trend line chart for a KPI over time"""
+    
+    # Calculate metric for all months
     values = []
     for idx in range(len(data)):
         kpis = calculate_kpis(data, idx)
@@ -230,24 +247,24 @@ def create_trend_chart(data, metric_key, title, target=None):
     
     fig = go.Figure()
     
+    # Add actual values line
     fig.add_trace(go.Scatter(
         x=data['Month'],
         y=values,
         mode='lines+markers',
         name='Actual',
         line=dict(color='#2F5496', width=3),
-        marker=dict(size=8),
-        hovertemplate='%{x|%b %Y}<br>Value: %{y:.1f}<extra></extra>'
+        marker=dict(size=8)
     ))
     
+    # Add target line if provided
     if target:
         fig.add_trace(go.Scatter(
             x=data['Month'],
             y=[target] * len(data),
             mode='lines',
             name='Target',
-            line=dict(color='#C00000', width=2, dash='dash'),
-            hovertemplate='Target: %{y}<extra></extra>'
+            line=dict(color='#C00000', width=2, dash='dash')
         ))
     
     fig.update_layout(
@@ -256,43 +273,42 @@ def create_trend_chart(data, metric_key, title, target=None):
         yaxis_title='Value',
         hovermode='x unified',
         template='plotly_white',
-        height=350,
+        height=300,
         margin=dict(l=50, r=50, t=50, b=50)
     )
     
     return fig
 
 def create_gm_summary_chart(kpis):
-    """Create horizontal bar chart for GM focus KPIs"""
-    gm_kpis = []
+    """Create a horizontal bar chart for GM focus KPIs"""
     
+    gm_kpis = []
     for category_kpis in kpi_definitions.values():
         for kpi_def in category_kpis:
             if kpi_def.get('priority'):
                 value = kpis[kpi_def['key']]
                 target = kpi_def['target']
-                status_icon, status_class = get_status(value, target, kpi_def['comparison'])
+                status_icon, status_color = get_status(value, target, kpi_def['comparison'])
                 
                 gm_kpis.append({
                     'name': kpi_def['name'],
                     'value': value,
                     'target': target,
-                    'status': status_class
+                    'status': status_icon
                 })
-    
-    colors = ['#00B050' if kpi['status'] == 'green' else '#FFC000' if kpi['status'] == 'amber' else '#C00000' for kpi in gm_kpis]
+                break
     
     fig = go.Figure()
+    
+    colors = ['#00B050' if '🟢' in kpi['status'] else '#FFC000' if '🟠' in kpi['status'] else '#C00000' for kpi in gm_kpis]
     
     fig.add_trace(go.Bar(
         y=[kpi['name'] for kpi in gm_kpis],
         x=[kpi['value'] for kpi in gm_kpis],
         orientation='h',
         marker=dict(color=colors),
-        text=[f"{kpi['value']:.1f}" for kpi in gm_kpis],
+        text=[f"{kpi['value']:.1f} (Target: {kpi['target']})" for kpi in gm_kpis],
         textposition='auto',
-        hovertemplate='%{y}<br>Actual: %{x:.1f}<br>Target: %{customdata}<extra></extra>',
-        customdata=[kpi['target'] for kpi in gm_kpis]
     ))
     
     fig.update_layout(
@@ -300,7 +316,7 @@ def create_gm_summary_chart(kpis):
         xaxis_title='Value',
         template='plotly_white',
         height=400,
-        margin=dict(l=250, r=50, t=50, b=50)
+        margin=dict(l=200, r=50, t=50, b=50)
     )
     
     return fig
@@ -313,194 +329,292 @@ def main():
     # Header
     st.markdown("""
     <div class="main-header">
-        <h1>📊 Invoicing Manager KPI Dashboard</h1>
-        <p>Real-time tracking of invoicing performance metrics</p>
+        <h3 style='margin: 0;'>📊 Invoicing Manager KPI Dashboard</h3>
+        <p style='margin: 5px 0 0 0; font-size: 13px; color: #666;'>Real-time tracking of invoicing performance metrics</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # Load data
-    monthly_data = initialize_data()
+    # Sidebar - File Upload
+    st.sidebar.header("📁 Data Upload")
     
-    # Sidebar
-    st.sidebar.header("📅 Dashboard Controls")
-    
-    # Month selector
-    month_options = [m.strftime('%B %Y') for m in monthly_data['Month']]
-    selected_month = st.sidebar.selectbox(
-        "Select Month",
-        month_options,
-        index=len(month_options) - 1
+    uploaded_file = st.sidebar.file_uploader(
+        "Upload Monthly Data Excel File",
+        type=['xlsx', 'xls'],
+        help="Upload your monthly invoicing data file"
     )
     
-    month_idx = month_options.index(selected_month)
-    current_kpis = calculate_kpis(monthly_data, month_idx)
-    
-    # View mode
-    view_mode = st.sidebar.radio(
-        "View Mode",
-        ["GM Summary", "Detailed KPIs", "Trend Analysis"],
-        index=0
-    )
-    
+    # Instructions
     st.sidebar.markdown("---")
-    st.sidebar.info(f"📅 Viewing data for: **{selected_month}**")
+    with st.sidebar.expander("📋 Required Excel Columns"):
+        st.markdown("""
+        **Timeliness:**
+        - Month, Total_Invoices, OnTime_Invoices
+        - Avg_Billing_Timeliness, Avg_Invoice_Cycle_Time
+        - Planned_Milestones, Invoiced_Milestones
+        
+        **Quality:**
+        - Corrected_Invoices, Reissued_Invoices
+        - Disputed_Invoices, Avg_Dispute_Resolution_Days
+        
+        **Coverage:**
+        - Recognized_Revenue, Invoiced_Amount
+        - CO_Approved, CO_Invoiced
+        - Advance_Received, Advance_Used
+        
+        **WIP:**
+        - WIP, Avg_Daily_Billed_Revenue
+        - Old_WIP, Monthly_Revenue
+        
+        **Collaboration:**
+        - Submitted_Packages, Returned_Packages
+        - Avg_PM_Approval_Days, Total_Cost_Reports
+        - Late_Cost_Reports
+        """)
     
     # =============================================================================
-    # GM SUMMARY VIEW
+    # PROCESS UPLOADED FILE OR SHOW INSTRUCTIONS
     # =============================================================================
     
-    if view_mode == "GM Summary":
-        st.header("🎯 GM Monthly Focus - Top 5 KPIs")
+    if uploaded_file is not None:
+        # Load data from uploaded file
+        monthly_data = load_data_from_excel(uploaded_file)
         
-        # Display chart
-        gm_chart = create_gm_summary_chart(current_kpis)
-        st.plotly_chart(gm_chart, use_container_width=True)
+        if monthly_data is None:
+            return  # Error already displayed
         
-        # Summary metrics
-        st.markdown("### Key Performance Indicators")
+        # Success message
+        st.success(f"✅ File uploaded successfully! Found {len(monthly_data)} months of data")
         
-        cols = st.columns(5)
+        # Show file info
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("📅 Months Loaded", len(monthly_data))
+        with col2:
+            st.metric("📆 From", monthly_data['Month'].min().strftime('%b %Y'))
+        with col3:
+            st.metric("📆 To", monthly_data['Month'].max().strftime('%b %Y'))
         
-        priority_kpis = []
-        for category_kpis in kpi_definitions.values():
-            for kpi_def in category_kpis:
-                if kpi_def.get('priority'):
-                    priority_kpis.append(kpi_def)
+        st.markdown("---")
         
-        for idx, kpi_def in enumerate(priority_kpis):
-            value = current_kpis[kpi_def['key']]
-            target = kpi_def['target']
-            status_icon, _ = get_status(value, target, kpi_def['comparison'])
-            
-            with cols[idx % 5]:
-                if '%' in kpi_def['name']:
-                    st.metric(
-                        kpi_def['name'],
-                        f"{value:.1f}%",
-                        f"Target: {target}%"
-                    )
-                elif 'Ratio' in kpi_def['name']:
-                    st.metric(
-                        kpi_def['name'],
-                        f"{value:.2f}",
-                        f"Target: {target:.1f}"
-                    )
-                else:
-                    st.metric(
-                        kpi_def['name'],
-                        f"{value:.1f}",
-                        f"Target: {target}"
-                    )
-                st.markdown(f"<div style='text-align: center; font-size: 24px;'>{status_icon}</div>", unsafe_allow_html=True)
-    
-    # =============================================================================
-    # DETAILED KPIs VIEW
-    # =============================================================================
-    
-    elif view_mode == "Detailed KPIs":
-        st.header("📈 Detailed KPI Breakdown")
+        # Month selector
+        month_options = [m.strftime('%B %Y') for m in monthly_data['Month']]
+        selected_month = st.sidebar.selectbox(
+            "Select Month",
+            month_options,
+            index=len(month_options) - 1
+        )
         
-        # Create tabs for each category
-        tabs = st.tabs(["⏱️ Timeliness", "✅ Quality", "💰 Coverage", "📦 WIP Control", "🤝 Collaboration"])
+        month_idx = month_options.index(selected_month)
         
-        categories = ['timeliness', 'quality', 'coverage', 'wip', 'collaboration']
-        
-        for tab, category in zip(tabs, categories):
-            with tab:
-                kpi_list = kpi_definitions[category]
-                
-                for kpi_def in kpi_list:
-                    value = current_kpis[kpi_def['key']]
-                    target = kpi_def['target']
-                    status_icon, status_class = get_status(value, target, kpi_def['comparison'])
-                    
-                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-                    
-                    with col1:
-                        st.markdown(f"**{kpi_def['name']}**")
-                    
-                    with col2:
-                        if '%' in kpi_def['name']:
-                            st.markdown(f"Target: {target}%")
-                        elif 'Ratio' in kpi_def['name']:
-                            st.markdown(f"Target: {target:.1f}")
-                        else:
-                            st.markdown(f"Target: {target}")
-                    
-                    with col3:
-                        if '%' in kpi_def['name']:
-                            st.markdown(f"**{value:.1f}%**")
-                        elif 'Ratio' in kpi_def['name']:
-                            st.markdown(f"**{value:.2f}**")
-                        else:
-                            st.markdown(f"**{value:.1f}**")
-                    
-                    with col4:
-                        st.markdown(f"<div class='status-{status_class}'>{status_icon}</div>", unsafe_allow_html=True)
-                    
-                    st.markdown("---")
-    
-    # =============================================================================
-    # TREND ANALYSIS VIEW
-    # =============================================================================
-    
-    else:  # Trend Analysis
-        st.header("📊 Trend Analysis")
-        
-        # Metric selector
-        all_metrics = []
-        for category_name, kpi_list in kpi_definitions.items():
-            for kpi_def in kpi_list:
-                all_metrics.append({
-                    'display': f"{kpi_def['name']} ({category_name.title()})",
-                    'key': kpi_def['key'],
-                    'name': kpi_def['name'],
-                    'target': kpi_def['target']
-                })
-        
-        selected_metric = st.selectbox(
-            "Select KPI to analyze",
-            [m['display'] for m in all_metrics],
+        # View mode selector
+        view_mode = st.sidebar.radio(
+            "View Mode",
+            ["GM Summary", "Detailed KPIs", "Trend Analysis"],
             index=0
         )
         
-        metric_info = [m for m in all_metrics if m['display'] == selected_metric][0]
+        st.sidebar.markdown("---")
+        st.sidebar.info(f"📅 Viewing data for: **{selected_month}**")
         
-        # Display trend chart
-        trend_chart = create_trend_chart(
-            monthly_data,
-            metric_info['key'],
-            metric_info['name'],
-            metric_info['target']
-        )
-        st.plotly_chart(trend_chart, use_container_width=True)
+        # Calculate current KPIs
+        current_kpis = calculate_kpis(monthly_data, month_idx)
         
-        # Statistics
-        st.markdown("### Statistics")
+        # =============================================================================
+        # GM SUMMARY VIEW
+        # =============================================================================
         
-        values = []
-        for idx in range(len(monthly_data)):
-            kpis = calculate_kpis(monthly_data, idx)
-            values.append(kpis[metric_info['key']])
+        if view_mode == "GM Summary":
+            st.header("🎯 GM Monthly Focus - Top 5 KPIs")
+            
+            # Display chart
+            gm_chart = create_gm_summary_chart(current_kpis)
+            st.plotly_chart(gm_chart, use_container_width=True)
+            
+            # Summary metrics
+            st.markdown("### Key Performance Indicators")
+            
+            cols = st.columns(5)
+            
+            priority_kpis = []
+            for category_kpis in kpi_definitions.values():
+                for kpi_def in category_kpis:
+                    if kpi_def.get('priority'):
+                        priority_kpis.append(kpi_def)
+            
+            for idx, kpi_def in enumerate(priority_kpis):
+                value = current_kpis[kpi_def['key']]
+                target = kpi_def['target']
+                status_icon, _ = get_status(value, target, kpi_def['comparison'])
+                
+                with cols[idx % 5]:
+                    if '%' in kpi_def['name']:
+                        st.metric(
+                            kpi_def['name'],
+                            f"{value:.1f}%",
+                            f"Target: {target}%"
+                        )
+                    elif 'Ratio' in kpi_def['name']:
+                        st.metric(
+                            kpi_def['name'],
+                            f"{value:.2f}",
+                            f"Target: {target:.1f}"
+                        )
+                    else:
+                        st.metric(
+                            kpi_def['name'],
+                            f"{value:.1f}",
+                            f"Target: {target}"
+                        )
+                    st.markdown(f"<div style='text-align: center; font-size: 24px;'>{status_icon}</div>", unsafe_allow_html=True)
         
-        col1, col2, col3, col4 = st.columns(4)
+        # =============================================================================
+        # DETAILED KPIs VIEW
+        # =============================================================================
+        
+        elif view_mode == "Detailed KPIs":
+            st.header("📈 Detailed KPI Breakdown")
+            
+            # Create tabs for each category
+            tabs = st.tabs(["⏱️ Timeliness", "✅ Quality", "💰 Coverage", "📦 WIP Control", "🤝 Collaboration"])
+            
+            categories = ['timeliness', 'quality', 'coverage', 'wip', 'collaboration']
+            
+            for tab, category in zip(tabs, categories):
+                with tab:
+                    kpi_list = kpi_definitions[category]
+                    
+                    for kpi_def in kpi_list:
+                        value = current_kpis[kpi_def['key']]
+                        target = kpi_def['target']
+                        status_icon, status_class = get_status(value, target, kpi_def['comparison'])
+                        
+                        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                        
+                        with col1:
+                            st.markdown(f"**{kpi_def['name']}**")
+                        
+                        with col2:
+                            if '%' in kpi_def['name']:
+                                st.markdown(f"Target: {target}%")
+                            elif 'Ratio' in kpi_def['name']:
+                                st.markdown(f"Target: {target:.1f}")
+                            else:
+                                st.markdown(f"Target: {target}")
+                        
+                        with col3:
+                            if '%' in kpi_def['name']:
+                                st.markdown(f"**{value:.1f}%**")
+                            elif 'Ratio' in kpi_def['name']:
+                                st.markdown(f"**{value:.2f}**")
+                            else:
+                                st.markdown(f"**{value:.1f}**")
+                        
+                        with col4:
+                            st.markdown(f"<div class='{status_class}'>{status_icon}</div>", unsafe_allow_html=True)
+                        
+                        st.markdown("---")
+        
+        # =============================================================================
+        # TREND ANALYSIS VIEW
+        # =============================================================================
+        
+        else:  # Trend Analysis
+            st.header("📊 Trend Analysis")
+            
+            # Metric selector
+            all_metrics = []
+            for category_name, kpi_list in kpi_definitions.items():
+                for kpi_def in kpi_list:
+                    all_metrics.append({
+                        'display': f"{kpi_def['name']} ({category_name.title()})",
+                        'key': kpi_def['key'],
+                        'name': kpi_def['name'],
+                        'target': kpi_def['target']
+                    })
+            
+            selected_metric = st.selectbox(
+                "Select KPI to analyze",
+                [m['display'] for m in all_metrics],
+                index=0
+            )
+            
+            metric_info = [m for m in all_metrics if m['display'] == selected_metric][0]
+            
+            # Display trend chart
+            trend_chart = create_trend_chart(
+                monthly_data,
+                metric_info['key'],
+                metric_info['name'],
+                metric_info['target']
+            )
+            st.plotly_chart(trend_chart, use_container_width=True)
+            
+            # Statistics
+            st.markdown("### Statistics")
+            
+            values = []
+            for idx in range(len(monthly_data)):
+                kpis = calculate_kpis(monthly_data, idx)
+                values.append(kpis[metric_info['key']])
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Current", f"{values[-1]:.2f}")
+            with col2:
+                st.metric("Average", f"{sum(values)/len(values):.2f}")
+            with col3:
+                st.metric("Best", f"{min(values) if metric_info.get('comparison') == '<=' else max(values):.2f}")
+            with col4:
+                st.metric("Worst", f"{max(values) if metric_info.get('comparison') == '<=' else min(values):.2f}")
+
+        # Footer
+        st.markdown("---")
+        st.markdown("""
+        <div style='text-align: center; color: #666; padding: 1rem;'>
+            <p>Invoicing Manager KPI Dashboard | Built with Streamlit</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    else:
+        # No file uploaded - show instructions
+        st.info("👆 Please upload an Excel file using the sidebar to get started")
+        
+        st.markdown("### 📋 How to Use This Dashboard")
+        st.markdown("""
+        1. **Prepare your monthly data** in Excel with all required columns (see sidebar for list)
+        2. **Upload the file** using the file uploader in the sidebar
+        3. **View your dashboard** - it will update automatically!
+        4. **Select different months** to see historical performance
+        5. **Explore different views** - GM Summary, Detailed KPIs, or Trend Analysis
+        """)
+        
+        st.markdown("### ✨ Features")
+        col1, col2 = st.columns(2)
         
         with col1:
-            st.metric("Current", f"{values[-1]:.2f}")
+            st.markdown("""
+            - 📊 **Interactive Charts** - Hover for details, zoom, pan
+            - 📅 **Month Selection** - View any historical period
+            - 🎯 **GM Focus** - Top 5 critical metrics at a glance
+            """)
+        
         with col2:
-            st.metric("Average", f"{sum(values)/len(values):.2f}")
-        with col3:
-            st.metric("Best", f"{min(values) if metric_info.get('comparison') == '<=' else max(values):.2f}")
-        with col4:
-            st.metric("Worst", f"{max(values) if metric_info.get('comparison') == '<=' else min(values):.2f}")
-
-    # Footer
-    st.markdown("---")
-    st.markdown("""
-    <div style='text-align: center; color: #666; padding: 1rem;'>
-        <p>Invoicing Manager KPI Dashboard | Built with Streamlit</p>
-    </div>
-    """, unsafe_allow_html=True)
+            st.markdown("""
+            - 📈 **Trend Analysis** - Track performance over time
+            - 🔄 **Auto-Update** - Upload new data anytime
+            - 💡 **Three View Modes** - Summary, Detailed, Trends
+            """)
+        
+        st.markdown("### 📥 Need Test Data?")
+        st.markdown("""
+        Download the test Excel files to see the dashboard in action:
+        - **October 2024** - Sample data for testing
+        - **November 2024** - Sample data for testing  
+        - **December 2024** - Sample data for testing
+        
+        Each file contains one month of invoicing data with all required columns.
+        """)
 
 if __name__ == '__main__':
     main()
